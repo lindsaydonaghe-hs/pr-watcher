@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Environment (contains secrets)
+.env
+
+# Runtime files
+.watchers/
+*.log
+
+# macOS
+.DS_Store

@@ -1,0 +1,79 @@
+---
+description: PR-awareness - auto-start watcher after push, check terminal for CI/cursorbot issues
+alwaysApply: true
+---
+
+# PR Watcher Awareness
+
+After any `git push` or PR creation, output the watcher command for easy copying.
+
+## After Git Push or PR Creation
+
+When you run `git push`, create a PR, or help the user push commits:
+
+1. Get the PR info:
+   ```bash
+   gh pr view --json number,url -q '"\(.number) \(.url)"' 2>/dev/null
+   ```
+
+2. **ALWAYS output the watcher command** in a copyable code block using just the PR number:
+
+   ```
+   📋 Start PR watcher (copy to terminal):
+   ```
+   ```bash
+   prwatchfg <pr_number>
+   ```
+   
+   Also include the PR URL for easy access:
+   ```
+   🔗 PR URL: <url>
+   ```
+
+3. Example output after push:
+   ```
+   ✅ Pushed to PR #1234
+   
+   📋 Start PR watcher (copy to terminal):
+   ```
+   ```bash
+   prwatchfg 1234
+   ```
+   ```
+   🔗 PR: https://github.com/joinhandshake/joinera/pull/1234
+   ```
+
+This makes it easy to copy the command and paste into a terminal to start watching.
+
+## Checking for Issues
+
+Before completing tasks or when the user mentions "check the PR" or "fix issues":
+
+1. Look for a terminal running the PR watcher (shows "PR Watcher" header)
+2. Read the terminal output to see active issues
+3. Issues appear as:
+   - `🤖 [HIGH/MED/LOW]` - Cursorbot review comments (fix the code)
+   - `❌ [CI]` - Buildkite/CI failures (run `bklog <URL>` for details)
+
+## Fixing Issues
+
+For cursorbot issues:
+- Read the file at the path shown
+- Understand the feedback and fix the code
+
+For CI failures:
+- Run: `node ~/.cursor/mcp-servers/pr-watcher/buildkite.js <buildkite-url>`
+- Parse the error output to find failing file/line
+- Fix the issue
+
+After fixing, commit and push. The watcher will update automatically.
+
+## Shell Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `gpw` | Git push + watch (preferred) |
+| `prwatchfg <PR>` | Watch PR in foreground |
+| `prstatus` | Show running watchers |
+| `prdetail <ID>` | Get issue details |
+| `bklog <URL>` | Get Buildkite failure details |

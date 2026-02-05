@@ -229,11 +229,17 @@ cp ~/.cursor/mcp-servers/pr-watcher/typescript-project-references.mdc ~/.cursor/
 - Check downstream packages, not just modified files
 - Distinguish code issues from infrastructure issues
 - Follow a checklist before concluding "not our code"
+- **Read the FULL CI logs** - don't skim beginning/end and miss errors in the middle
+- **Exit code 130 ≠ infrastructure** - look for actual errors before the exit code
+- **Repeated failures = code issue** - if it keeps failing, dig deeper instead of dismissing
+- **Follow your own rules** - if you know to use `tsc -b`, actually use it
 
 **TypeScript Project References** teaches agents to:
 - Use `tsc -b` instead of `tsc --noEmit` for project references
 - Use monorepo tools (NX, Turbo, etc.) for proper cross-package type checking
 - Verify types at the source before adding annotations
+- **Run type checks after EVERY change** - not just once at the end
+- **Filter for YOUR files** - ignore pre-existing errors in dependencies, focus on your code
 
 To add custom non-blocking patterns, set the `NON_BLOCKING_CI` environment variable:
 

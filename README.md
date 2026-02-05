@@ -14,6 +14,8 @@ Automatically monitor GitHub PRs for Cursorbot issues and CI (Buildkite/Trunk) f
 - **Clipboard integration** - Fix prompts auto-copied for quick paste into Cursor
 - **Cursor rule** - Agents automatically start watcher after push
 
+![PR Watcher Screenshot](assets/screenshot.png)
+
 ## Quick Start
 
 ### 1. Clone/Copy to your machine
@@ -134,7 +136,7 @@ gpw
 # PR Watcher - joinhandshake/joinera#8211
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Last checked: 4:30:00 PM
-# Shortcuts: c=copy all  r=refresh  q=quit
+# Keys: c=copy issues  u=copy URL  r=refresh  q=quit
 # 
 # 📋 3 active issue(s):
 #   🤖 [CURSOR] [HIGH] review-123456

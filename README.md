@@ -210,7 +210,21 @@ By default, these CI job patterns are considered non-blocking (won't prevent "re
 - `deque_notify` - Merge queue dequeue notifications
 - `dequeue` - Dequeue-related jobs
 
-To add custom patterns, set the `NON_BLOCKING_CI` environment variable:
+### CI Failure Investigation Rule
+
+A Cursor rule is included to ensure thorough investigation of CI failures before dismissing them as infrastructure issues:
+
+```bash
+cp ~/.cursor/mcp-servers/pr-watcher/ci-failure-investigation.mdc ~/.cursor/rules/
+```
+
+This rule teaches agents to:
+- Trace dependency chains for TypeScript errors
+- Check downstream packages, not just modified files
+- Distinguish code issues from infrastructure issues
+- Follow a checklist before concluding "not our code"
+
+To add custom non-blocking patterns, set the `NON_BLOCKING_CI` environment variable:
 
 ```bash
 # In your .env file or shell
@@ -228,6 +242,7 @@ NON_BLOCKING_CI="my-optional-check,another-pattern"
 | `git-push-watch.sh` | Shell commands (gpw, prwatch, etc.) |
 | `SKILL.md` | Cursor skill file (teaches agents how to use this) |
 | `pr-watcher-awareness.mdc` | Cursor rule for PR-aware agents |
+| `ci-failure-investigation.mdc` | Rule for thorough CI failure investigation |
 | `.env` | Your tokens (not committed) |
 | `.env.example` | Template for tokens |
 

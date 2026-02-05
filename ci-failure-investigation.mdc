@@ -1,0 +1,102 @@
+---
+description: Apply when investigating CI failures or TypeScript errors. Ensures thorough investigation before dismissing issues as infrastructure problems.
+globs:
+alwaysApply: false
+---
+
+# CI Failure & Error Investigation
+
+When investigating CI failures or errors, **do not prematurely conclude issues are unrelated to code changes**. Follow this systematic investigation approach.
+
+## Core Principle
+
+**Assume code changes are the cause until proven otherwise.** Infrastructure issues are real, but code issues are more common and more actionable.
+
+## Investigation Checklist
+
+### 1. Distinguish Error Types
+
+- **Exit code 130/137**: Process killed (SIGINT/SIGTERM) - *may* be infrastructure, but still investigate
+- **TypeScript errors (TS####)**: Almost always code-related - investigate thoroughly
+- **Lint errors**: Code-related
+- **Test failures**: Code-related unless flaky (check history)
+- **Build errors**: Usually code-related
+
+### 2. For TypeScript Errors
+
+When you see TypeScript errors in files you didn't directly modify:
+
+1. **Trace the dependency chain**: Your changes to Package A may break Package B that depends on A
+2. **Check type compatibility**: Adding optional props to one type in a union can break interchangeable usage
+3. **Run broader type checks**: Don't just check the modified package; check dependent packages:
+   ```bash
+   # Check specific project (adapt to your build system)
+   yarn typecheck          # or npm run typecheck
+   yarn tsc --noEmit       # direct TypeScript check
+   
+   # For monorepos with nx
+   yarn nx affected --target=typecheck
+   
+   # For monorepos with turbo
+   turbo run typecheck --filter=...[origin/main]
+   ```
+
+### 3. For Shared Types/Interfaces
+
+When modifying types that are exported or shared:
+
+1. **Search for usages**: Find where the type is imported
+2. **Check for union types**: Components used interchangeably require compatible prop types
+3. **Consider adding to shared base type**: If a prop is optional, adding it to a shared base type ensures compatibility
+
+### 4. Common Patterns That Break Downstream
+
+```typescript
+// BEFORE: Compatible union
+type PropsA = { name: string };
+type PropsB = { name: string };
+const Component = condition ? ComponentA : ComponentB; // ✅ Works
+
+// AFTER: Incompatible union (breaks downstream)
+type PropsA = { name: string; color?: string };  // Added prop
+type PropsB = { name: string };  // No color prop
+const Component = condition ? ComponentA : ComponentB; // ❌ TS2604
+
+// FIX: Add to shared base or both types
+type SharedProps = { name: string; color?: string };
+type PropsA = SharedProps;
+type PropsB = SharedProps;  // color is optional, ComponentB can ignore it
+```
+
+## Red Flags That Suggest Code Issues
+
+- Error mentions files in packages that depend on your changes
+- TypeScript errors about missing properties or incompatible types
+- Errors in components that use your modified types interchangeably
+- Multiple unrelated CI jobs failing with the same error pattern
+- Errors started appearing after your PR was pushed
+
+## Red Flags That Suggest Infrastructure Issues
+
+- Exit code 130/137 with no error output
+- Errors about network timeouts, disk space, memory
+- Random test failures that pass on retry with no code changes
+- Errors in CI setup/teardown, not in actual build/test steps
+- Same errors happening on unrelated PRs at the same time
+
+## Before Concluding "Not Our Code"
+
+1. ✅ Searched for usages of modified types/interfaces
+2. ✅ Ran type checks on dependent packages (not just modified package)
+3. ✅ Checked if error files import from packages you modified
+4. ✅ Verified the error existed before your changes (check main branch)
+5. ✅ Read the actual error message carefully, not just the exit code
+6. ✅ Checked if other PRs are seeing the same failure
+
+## Using with PR Watcher
+
+When PR Watcher reports CI failures:
+
+1. Use `bklog <URL>` to get the full error details
+2. Apply this investigation checklist before dismissing as non-blocking
+3. If truly infrastructure-related, add pattern to `NON_BLOCKING_CI` env var

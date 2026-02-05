@@ -1,0 +1,145 @@
+---
+description: Apply when running TypeScript type checks in monorepos. Ensures proper project reference builds to catch cross-package type errors.
+globs:
+alwaysApply: false
+---
+
+# TypeScript Type Checking with Project References
+
+## Problem
+
+Running `tsc --noEmit` in a package directory does NOT catch all type errors because it skips building dependencies. In monorepos with TypeScript project references, `tsc -b` (build mode) is required to properly type-check across package boundaries.
+
+## Correct Commands
+
+### For monorepo tools (preferred):
+
+```bash
+# NX
+yarn nx check-types <package-name>
+yarn nx affected --target=check-types
+
+# Turborepo
+turbo run typecheck --filter=<package-name>
+turbo run typecheck --filter=...[origin/main]
+
+# Lerna
+lerna run typecheck --scope=<package-name>
+
+# Rush
+rush build -t <package-name>
+```
+
+### Direct tsc with project references:
+
+```bash
+# Build mode (-b) respects project references
+npx tsc -b path/to/package/tsconfig.json
+
+# With declaration output only (faster)
+npx tsc -b path/to/package/tsconfig.json --emitDeclarationOnly
+```
+
+## What NOT to Use
+
+```bash
+# ❌ WRONG - Skips dependency type checking
+cd packages/my-package && npx tsc --noEmit
+
+# ❌ WRONG - Missing -b flag for project references  
+npx tsc packages/my-package/tsconfig.json --noEmit
+
+# ❌ WRONG - --noEmit with -b is contradictory
+npx tsc -b --noEmit  # -b implies building, --noEmit prevents it
+```
+
+## Why This Matters
+
+In monorepos with project references:
+
+1. Packages have `references` in their `tsconfig.json` to dependencies
+2. `tsc -b` (build mode) compiles referenced projects first
+3. `tsc --noEmit` ignores project references entirely
+4. Type errors in HOW a dependency's exports are used will be missed
+
+## How to Check if You Need -b
+
+Look at your `tsconfig.json`:
+
+```json
+{
+  "references": [
+    { "path": "../other-package" }
+  ]
+}
+```
+
+If you see a `references` array, you need `tsc -b` for complete type checking.
+
+## Common Pitfall: Assuming Types
+
+When using functions/hooks from other packages, always verify the actual return type:
+
+```typescript
+// ❌ WRONG - Assumed type without checking source
+interface Result {
+  ref: React.RefObject<HTMLDivElement>;
+}
+
+// ✅ CORRECT - Verified against actual implementation
+// The hook actually returns a callback ref, not a ref object
+type RefCallback = <T extends HTMLElement | null>(node: T) => void;
+interface Result {
+  ref: RefCallback | undefined;
+}
+```
+
+### How to verify types:
+
+1. Find the source file of the function/hook
+2. Check its return statement or return type annotation
+3. Match your interface to the actual type
+4. Don't rely on IDE inference alone - it may not have built dependencies
+
+## Run Type Checks After EVERY Change
+
+Don't just run type checks once at the end. **Run after every significant change**:
+
+```bash
+# After each change, run immediately
+npx tsc -b path/to/package/tsconfig.json --emitDeclarationOnly
+
+# Or use your monorepo tool
+yarn nx check-types <package-name>
+```
+
+**Why?** If you make a change, run `tsc --noEmit` (wrong command), see it pass, then push - you'll get CI failures that "shouldn't happen." The fix is to run the RIGHT command after EVERY change.
+
+## Filter for YOUR Files
+
+When type checking produces many errors:
+
+1. **Pre-existing errors**: Some repos have dependency errors that existed before your PR
+2. **Focus on YOUR files**: Look for errors in files YOU modified or created
+3. **Grep for your changes**: 
+
+```bash
+# Run type check and filter for your files
+npx tsc -b path/to/tsconfig.json 2>&1 | grep -E "(your-file|your-package)"
+
+# Or look for new errors specifically
+npx tsc -b path/to/tsconfig.json 2>&1 | grep "error TS"
+```
+
+**Don't ignore all errors** - but if you see 50 pre-existing errors in dependencies, focus on finding the error in YOUR code first.
+
+## Pre-Push Checklist
+
+Before pushing changes that add/modify types:
+
+1. Run your monorepo's typecheck command (not just `tsc --noEmit`)
+2. **Run it after EVERY change**, not just once at the end
+3. If adding a type annotation, verify it matches the source
+4. Check that test mocks match actual return types
+5. **Filter output for YOUR files** when there's noise from pre-existing errors
+6. If CI fails with type errors you don't see locally, you probably used the wrong command

@@ -210,19 +210,28 @@ By default, these CI job patterns are considered non-blocking (won't prevent "re
 - `deque_notify` - Merge queue dequeue notifications
 - `dequeue` - Dequeue-related jobs
 
-### CI Failure Investigation Rule
+### CI Investigation Rules
 
-A Cursor rule is included to ensure thorough investigation of CI failures before dismissing them as infrastructure issues:
+Two Cursor rules are included to ensure thorough investigation of CI failures:
 
 ```bash
+# CI failure investigation - prevents dismissing code issues as infrastructure
 cp ~/.cursor/mcp-servers/pr-watcher/ci-failure-investigation.mdc ~/.cursor/rules/
+
+# TypeScript project references - ensures proper monorepo type checking
+cp ~/.cursor/mcp-servers/pr-watcher/typescript-project-references.mdc ~/.cursor/rules/
 ```
 
-This rule teaches agents to:
+**CI Failure Investigation** teaches agents to:
 - Trace dependency chains for TypeScript errors
 - Check downstream packages, not just modified files
 - Distinguish code issues from infrastructure issues
 - Follow a checklist before concluding "not our code"
+
+**TypeScript Project References** teaches agents to:
+- Use `tsc -b` instead of `tsc --noEmit` for project references
+- Use monorepo tools (NX, Turbo, etc.) for proper cross-package type checking
+- Verify types at the source before adding annotations
 
 To add custom non-blocking patterns, set the `NON_BLOCKING_CI` environment variable:
 
@@ -243,6 +252,7 @@ NON_BLOCKING_CI="my-optional-check,another-pattern"
 | `SKILL.md` | Cursor skill file (teaches agents how to use this) |
 | `pr-watcher-awareness.mdc` | Cursor rule for PR-aware agents |
 | `ci-failure-investigation.mdc` | Rule for thorough CI failure investigation |
+| `typescript-project-references.mdc` | Rule for proper type checking in monorepos |
 | `.env` | Your tokens (not committed) |
 | `.env.example` | Template for tokens |
 

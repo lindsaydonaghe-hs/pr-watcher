@@ -92,11 +92,53 @@ type PropsB = SharedProps;  // color is optional, ComponentB can ignore it
 4. ✅ Verified the error existed before your changes (check main branch)
 5. ✅ Read the actual error message carefully, not just the exit code
 6. ✅ Checked if other PRs are seeing the same failure
+7. ✅ **Actually followed your own rules** - if you wrote a rule about running `tsc -b`, did you run it?
+
+## Meta-Rule: Follow Your Own Advice
+
+If you've created or know about a rule for catching errors (like using `tsc -b` instead of `tsc --noEmit`), you MUST actually follow it. Writing a rule and then not following it is worse than not having the rule at all.
+
+## Reading CI Logs Properly
+
+### Don't Skim - Read the FULL Output
+
+When using `bklog` or viewing CI logs:
+
+1. **Look for truncation indicators**: Output may contain `——` or similar separators indicating truncated sections
+2. **The real error is often in the middle**: Don't just read beginning and end, then conclude "exit 130 = infrastructure"
+3. **Search for actual error patterns**: Look for `error TS`, `Error:`, `FAILED`, etc.
+4. **Read the compiler output, not just exit codes**: Exit code 130 with TypeScript errors is a CODE issue, not infrastructure
+
+### Exit Code 130 is NOT Automatically Infrastructure
+
+```
+❌ WRONG thinking:
+"Exit status 130... must be infrastructure issue"
+
+✅ CORRECT thinking:
+"Exit status 130... let me find what error caused the process to be killed"
+```
+
+Exit code 130 means the process was interrupted. This happens when:
+- **Infrastructure**: Runner killed the job (timeout, OOM)
+- **Code issue**: Build failed and CI terminated the process
+
+**How to tell the difference**: Look for actual error output BEFORE the exit code.
+
+### Repeated Failures = Probably Code
+
+If the same CI job keeps failing across multiple commits:
+
+- ❌ Don't keep saying "infrastructure issue" each time
+- ✅ The repeated pattern strongly suggests a real code problem
+- ✅ Dig deeper into the logs each time until you find the root cause
 
 ## Using with PR Watcher
 
 When PR Watcher reports CI failures:
 
 1. Use `bklog <URL>` to get the full error details
-2. Apply this investigation checklist before dismissing as non-blocking
-3. If truly infrastructure-related, add pattern to `NON_BLOCKING_CI` env var
+2. **Read the ENTIRE output**, not just the summary
+3. **Look for truncated sections** and expand them
+4. Apply this investigation checklist before dismissing as non-blocking
+5. If truly infrastructure-related, add pattern to `NON_BLOCKING_CI` env var

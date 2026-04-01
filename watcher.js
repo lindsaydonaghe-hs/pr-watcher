@@ -19,10 +19,12 @@ const __dirname = dirname(__filename);
 config({ path: join(__dirname, '.env') });
 
 import { Octokit } from 'octokit';
-import { readdirSync, readFileSync, existsSync } from 'fs';
+import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import * as readline from 'readline';
+import { parseBuildkiteUrl, getBuildDetails, getFailingJobs, getJobLog, extractErrorSummary } from './buildkite.js';
 
 const WATCHERS_DIR = join(__dirname, '.watchers');
+const CI_LOGS_DIR = join(__dirname, '.ci-logs');
 
 const POLL_INTERVAL_MS = 30000; // 30 seconds
 
@@ -133,9 +135,12 @@ function generateFixPrompt(issues) {
     for (const issue of blockingCIIssues) {
       const ciName = issue.name || issue.source || 'CI';
       prompt += `- ${ciName}: ${issue.description || 'Build failed'}\n`;
-      if (issue.url) prompt += `  URL: ${issue.url}\n`;
+      if (issue.localLogFile) {
+        prompt += `  Logs: ${issue.localLogFile}\n`;
+      } else if (issue.url) {
+        prompt += `  URL: ${issue.url}\n`;
+      }
     }
-    prompt += `\nFor CI details, run: bklog <URL>\n`;
   }
   
   if (nonBlockingCIIssues.length > 0) {
@@ -256,7 +261,9 @@ let seenIssueIds = new Set();
 let prInfo = null;
 let previouslyHadBlockingIssues = false;  // Track if we had blocking issues on last poll
 let notifiedReadyToMerge = false;         // Don't spam "ready to merge" notifications
+const sessionLogFiles = new Map();        // issueId -> logFilePath for logs created this session
 let lastMergeQueueState = null;           // Track merge queue state for notifications
+let lastCIError = null;                   // Last CI fetch error, displayed after terminal clear
 let prUrl = null;                          // Cache the PR URL
 
 /**
@@ -897,6 +904,91 @@ function clearAndPrintHeader() {
 }
 
 /**
+ * Fetch Buildkite logs for new CI failures and save them locally.
+ * Attaches `localLogFile` to each issue where logs were saved.
+ */
+async function fetchAndSaveCILogs(newCIIssues) {
+  const bkIssues = newCIIssues.filter(i => i.url?.includes('buildkite.com'));
+  if (bkIssues.length === 0) return;
+
+  try {
+    mkdirSync(CI_LOGS_DIR, { recursive: true });
+  } catch (e) {
+    // ignore
+  }
+
+  for (const issue of bkIssues) {
+    const parsed = parseBuildkiteUrl(issue.url);
+    if (!parsed) continue;
+
+    try {
+      console.log(`${COLORS.blue}Fetching CI logs for ${issue.name || issue.id}...${COLORS.reset}`);
+      const { build, error } = await getBuildDetails(parsed.org, parsed.pipeline, parsed.buildNumber);
+      if (error || !build) {
+        console.log(`${COLORS.yellow}  Could not fetch build: ${error}${COLORS.reset}`);
+        continue;
+      }
+
+      const failingJobs = getFailingJobs(build);
+      const jobLogs = {};
+      for (const job of failingJobs) {
+        jobLogs[job.id] = await getJobLog(parsed.org, parsed.pipeline, parsed.buildNumber, job.id);
+      }
+
+      let content = `CI Failure: ${issue.name || issue.id}\nBuild URL: ${issue.url}\nFetched: ${new Date().toISOString()}\n`;
+      content += `${'='.repeat(70)}\n\n`;
+
+      if (failingJobs.length === 0) {
+        content += 'No failing jobs found.\n';
+      } else {
+        for (const job of failingJobs) {
+          content += `=== ${job.name} (${job.state}) ===\n`;
+          if (job.web_url) content += `Job URL: ${job.web_url}\n`;
+          const logResult = jobLogs[job.id];
+          if (logResult?.log) {
+            // Save full log (ANSI codes stripped) so agents see the complete output
+            content += logResult.log.replace(/\x1b\[[0-9;]*m/g, '');
+          } else if (logResult?.error) {
+            content += `Could not fetch log: ${logResult.error}\n`;
+          }
+          content += '\n\n';
+        }
+      }
+
+      const logFile = join(CI_LOGS_DIR, `${issue.id}.txt`);
+      writeFileSync(logFile, content, 'utf-8');
+      issue.localLogFile = logFile;
+      sessionLogFiles.set(issue.id, logFile);
+      console.log(`${COLORS.green}  Logs saved: ${logFile}${COLORS.reset}`);
+    } catch (e) {
+      console.log(`${COLORS.yellow}  Failed to fetch logs for ${issue.id}: ${e.message}${COLORS.reset}`);
+    }
+  }
+}
+
+/**
+ * Delete log files for CI issues that are no longer active.
+ */
+function cleanupStaleLogs(activeIssueIds) {
+  for (const [issueId, logFile] of sessionLogFiles) {
+    if (!activeIssueIds.has(issueId)) {
+      try { unlinkSync(logFile); } catch (e) { /* ignore */ }
+      sessionLogFiles.delete(issueId);
+    }
+  }
+}
+
+/**
+ * Delete all log files created this session.
+ */
+function cleanupAllSessionLogs() {
+  for (const logFile of sessionLogFiles.values()) {
+    try { unlinkSync(logFile); } catch (e) { /* ignore */ }
+  }
+  sessionLogFiles.clear();
+}
+
+/**
  * Poll for issues
  */
 async function pollForIssues() {
@@ -925,6 +1017,13 @@ async function pollForIssues() {
   if (newBlockingIssues.length > 0) {
     console.log(`${COLORS.bright}${COLORS.yellow}🔔 ${newBlockingIssues.length} new blocking issue(s) detected!${COLORS.reset}`);
     process.stdout.write('\x07'); // Bell sound
+
+    // Auto-fetch CI logs for new Buildkite failures
+    const newCIFailures = newBlockingIssues.filter(i => i.type === 'ci_failure');
+    if (newCIFailures.length > 0) {
+      await fetchAndSaveCILogs(newCIFailures);
+    }
+
     await sendNotification(newBlockingIssues);
     notifiedReadyToMerge = false;
   } else if (newNonBlockingIssues.length > 0) {
@@ -961,7 +1060,9 @@ async function pollForIssues() {
           console.log(`  ❌ ${COLORS.red}[CI]${COLORS.reset} ${COLORS.cyan}${issue.id}${COLORS.reset}${newTag}`);
           console.log(`     ${COLORS.bright}${ciName}${COLORS.reset}`);
           console.log(`     ${description}`);
-          if (issue.url) {
+          if (issue.localLogFile) {
+            console.log(`     ${COLORS.green}Logs: ${issue.localLogFile}${COLORS.reset}`);
+          } else if (issue.url) {
             console.log(`     ${COLORS.blue}${issue.url}${COLORS.reset}`);
           }
         }
@@ -1006,8 +1107,12 @@ async function pollForIssues() {
     console.log(`${COLORS.magenta}Tip:${COLORS.reset} Run ${COLORS.cyan}prdetail <ID>${COLORS.reset} for full details`);
     
     // Check if there are CI failures
-    const ciFailures = allIssues.filter(i => i.type === 'ci_failure');
-    if (ciFailures.length > 0) {
+    const ciFailures = allIssues.filter(i => i.type === 'ci_failure' && !i.nonBlocking);
+    const ciWithLogs = ciFailures.filter(i => i.localLogFile);
+    const ciWithoutLogs = ciFailures.filter(i => !i.localLogFile && i.url?.includes('buildkite.com'));
+    if (ciWithLogs.length > 0) {
+      console.log(`${COLORS.magenta}CI:${COLORS.reset}  Logs fetched — read the file(s) listed above`);
+    } else if (ciWithoutLogs.length > 0) {
       console.log(`${COLORS.magenta}CI:${COLORS.reset}  Run ${COLORS.cyan}bklog <URL>${COLORS.reset} for Buildkite failure details`);
     }
     
@@ -1105,6 +1210,10 @@ async function pollForIssues() {
   
   lastMergeQueueState = currentQueueState;
   previouslyHadBlockingIssues = hasBlockingIssues;
+
+  // Remove logs for CI issues that are no longer active
+  const activeIssueIds = new Set(allIssues.map(i => i.id));
+  cleanupStaleLogs(activeIssueIds);
 }
 
 /**
@@ -1146,12 +1255,14 @@ function setupKeyboardShortcuts() {
     // Handle Ctrl+C
     if (key.ctrl && key.name === 'c') {
       console.log(`\n${COLORS.yellow}Stopping watcher...${COLORS.reset}`);
+      cleanupAllSessionLogs();
       process.exit(0);
     }
-    
+
     // Handle 'q' to quit
     if (key.name === 'q') {
       console.log(`\n${COLORS.yellow}Stopping watcher...${COLORS.reset}`);
+      cleanupAllSessionLogs();
       process.exit(0);
     }
     

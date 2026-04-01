@@ -214,15 +214,22 @@ gpw() {
 
 # Start watcher in background
 prwatch() {
-    local pr_number="$1"
-    local pr_ref=$(_get_pr_info "$pr_number")
-    
-    if [[ -z "$pr_ref" ]]; then
-        if [[ -n "$pr_number" ]]; then
-            # Try with just the number
-            local repo_info=$(git remote get-url origin 2>/dev/null | sed -E 's/.*github\.com[:/]([^/]+)\/([^/.]+)(\.git)?$/\1\/\2/')
-            if [[ -n "$repo_info" ]]; then
-                pr_ref="${repo_info}#${pr_number}"
+    local pr_arg="$1"
+    local pr_ref=""
+
+    # If arg is a full GitHub URL or owner/repo#number, use it directly
+    if [[ "$pr_arg" =~ ^https://github\.com/ ]] || [[ "$pr_arg" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+$ ]]; then
+        pr_ref="$pr_arg"
+    else
+        local pr_number="$pr_arg"
+        pr_ref=$(_get_pr_info "$pr_number")
+
+        if [[ -z "$pr_ref" ]]; then
+            if [[ -n "$pr_number" ]]; then
+                local repo_info=$(git remote get-url origin 2>/dev/null | sed -E 's/.*github\.com[:/]([^/]+)\/([^/.]+)(\.git)?$/\1\/\2/')
+                if [[ -n "$repo_info" ]]; then
+                    pr_ref="${repo_info}#${pr_number}"
+                fi
             fi
         fi
     fi
@@ -237,14 +244,22 @@ prwatch() {
 
 # Start watcher in foreground (no push)
 prwatchfg() {
-    local pr_number="$1"
-    local pr_ref=$(_get_pr_info "$pr_number")
-    
-    if [[ -z "$pr_ref" ]]; then
-        if [[ -n "$pr_number" ]]; then
-            local repo_info=$(git remote get-url origin 2>/dev/null | sed -E 's/.*github\.com[:/]([^/]+)\/([^/.]+)(\.git)?$/\1\/\2/')
-            if [[ -n "$repo_info" ]]; then
-                pr_ref="${repo_info}#${pr_number}"
+    local pr_arg="$1"
+    local pr_ref=""
+
+    # If arg is a full GitHub URL or owner/repo#number, use it directly
+    if [[ "$pr_arg" =~ ^https://github\.com/ ]] || [[ "$pr_arg" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+$ ]]; then
+        pr_ref="$pr_arg"
+    else
+        local pr_number="$pr_arg"
+        pr_ref=$(_get_pr_info "$pr_number")
+
+        if [[ -z "$pr_ref" ]]; then
+            if [[ -n "$pr_number" ]]; then
+                local repo_info=$(git remote get-url origin 2>/dev/null | sed -E 's/.*github\.com[:/]([^/]+)\/([^/.]+)(\.git)?$/\1\/\2/')
+                if [[ -n "$repo_info" ]]; then
+                    pr_ref="${repo_info}#${pr_number}"
+                fi
             fi
         fi
     fi
